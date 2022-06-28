@@ -39,9 +39,8 @@ if($_POST) {
     }
     switch ($_POST['do']) {
         case 'sendmail':
-            $userid = (string) $_POST['userid'];
-            if (Validator::is_userid($userid)
-                    && ($staff=Staff::lookup($userid))) {
+            
+            if (($staff=Staff::lookup($_POST['userid']))) {
                 if (!$staff->hasPassword()) {
                     if ($staff->sendResetEmail('registration-staff', false) !== false)
                         $msg = __('Registration email sent successfully.');
@@ -51,9 +50,14 @@ if($_POST) {
                 elseif (!$staff->sendResetEmail()) {
                     $tpl = 'pwreset.sent.php';
                 }
+                else
+                {
+                    $msg = __('Unable to reset password. Contact your administrator');
+                }
             }
             else
-                $tpl = 'pwreset.sent.php';
+                $msg = sprintf(__('Unable to verify username %s'),
+                    Format::htmlchars($_POST['userid']));
             break;
         case 'newpasswd':
             // TODO: Compare passwords

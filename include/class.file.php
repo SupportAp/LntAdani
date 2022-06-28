@@ -95,10 +95,6 @@ class AttachmentFile extends VerySimpleModel {
         return $this->key;
     }
 
-    function getAttrs() {
-        return $this->attrs;
-    }
-
     function getSignature($cascade=false) {
         $sig = $this->signature;
         if (!$sig && $cascade) return $this->getKey();
@@ -184,7 +180,6 @@ class AttachmentFile extends VerySimpleModel {
         }
         header('Content-Type: '.($this->getType()?$this->getType():'application/octet-stream'));
         header('Content-Length: '.$this->getSize());
-        header("Content-Security-Policy: default-src 'self'");
         $this->sendData();
         exit();
     }
@@ -323,6 +318,12 @@ class AttachmentFile extends VerySimpleModel {
     /* Function assumes the files types have been validated */
     static function upload($file, $ft='T', $deduplicate=true) {
 
+
+        global $thisclient;
+        if(!is_object($thisclient) || !$thisclient->isValid()) die('Access denied 404');
+        //error_log(print_r($thisclient->get,TRUE));
+
+        
         if(!$file['name'] || $file['error'] || !is_uploaded_file($file['tmp_name']))
             return false;
 
@@ -489,7 +490,6 @@ class AttachmentFile extends VerySimpleModel {
         }
 
         $f->bk = $bk->getBkChar();
-        $f->attrs = $bk->getAttrs() ?: NULL;
 
         if (!isset($file['size'])) {
             if ($size = $bk->getSize())
@@ -573,7 +573,6 @@ class AttachmentFile extends VerySimpleModel {
         }
 
         $this->bk = $target->getBkChar();
-        $this->attrs = $target->getAttrs() ?: NULL;
         if (!$this->save())
             return false;
 
@@ -866,16 +865,6 @@ class FileStorageBackend {
      * used instead of inspecting the contents using `strlen`.
      */
     function getSize() {
-        return false;
-    }
-
-    /**
-     * getAttrs
-     *
-     * Get backend storage attributes.
-     *
-     */
-    function getAttrs() {
         return false;
     }
 }

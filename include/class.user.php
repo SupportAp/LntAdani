@@ -847,22 +847,8 @@ implements TemplateVariable {
         return $this->parts['middle'];
     }
 
-    function getFirstInitial() {
-        if ($this->parts['first'])
-            return mb_substr($this->parts['first'],0,1).'.';
-        return '';
-    }
-
     function getMiddleInitial() {
-        if ($this->parts['middle'])
-            return mb_substr($this->parts['middle'],0,1).'.';
-        return '';
-    }
-
-    function getLastInitial() {
-        if ($this->parts['last'])
-            return mb_substr($this->parts['last'],0,1).'.';
-        return '';
+        return mb_substr($this->parts['middle'],0,1).'.';
     }
 
     function getFormal() {
@@ -876,9 +862,10 @@ implements TemplateVariable {
     function getLegal() {
         $parts = array(
             $this->parts['first'],
-            $this->getMiddleInitial(),
+            mb_substr($this->parts['middle'],0,1),
             $this->parts['last'],
         );
+        if ($parts[1]) $parts[1] .= '.';
         return implode(' ', array_filter($parts));
     }
 
@@ -886,27 +873,27 @@ implements TemplateVariable {
         $parts = array(
             $this->parts['salutation'],
             $this->parts['first'],
-            $this->getMiddleInitial(),
+            mb_substr($this->parts['middle'],0,1),
             $this->parts['last'],
             $this->parts['suffix']
         );
+        if ($parts[2]) $parts[2] .= '.';
         return implode(' ', array_filter($parts));
     }
 
     function getLastFirst() {
         $name = $this->parts['last'].', '.$this->parts['first'];
-        $name = trim($name, ', ');
         if ($this->parts['suffix'])
             $name .= ', '.$this->parts['suffix'];
         return $name;
     }
 
     function getShort() {
-        return $this->parts['first'].' '.$this->getLastInitial();
+        return $this->parts['first'].' '.mb_substr($this->parts['last'],0,1).'.';
     }
 
     function getShortFormal() {
-        return $this->getFirstInitial().' '.$this->parts['last'];
+        return mb_substr($this->parts['first'],0,1).'. '.$this->parts['last'];
     }
 
     function getOriginal() {
@@ -1232,6 +1219,20 @@ class UserAccount extends VerySimpleModel {
         $token = Misc::randCode(48); // 290-bits
 
         $email = $cfg->getDefaultEmail();
+
+        $check_email=$this->getUser()->default_email->address;
+        //error_log(print_r($this->getUser()->default_email->address,TRUE));
+        /* Function to check the limits of password reset*/
+        require(INCLUDE_DIR.'ost-config.php');
+        $type=DBTYPE;$host=DBHOST;$dname=DBNAME;$user=DBUSER;$pass=DBPASS;
+        $con_pwd = new PDO($type.':host='.$host.';dbname='.$dname,$user,$pass);
+        $check_pwd="UPDATE okm_pwreset SET counter=counter+1 WHERE email=:emailx AND counter<3";
+        $stmt_chck_pwd=$con_pwd->prepare($check_pwd);
+        $stmt_chck_pwd->execute(array(':emailx'=>$check_email));
+        if(($stmt_chck_pwd->rowCount())>0)
+         {
+        //error_log(print_r("im in here",TRUE));
+        $con_pwd=null;
         $content = Page::lookupByType($template);
 
         if (!$email ||  !$content)
@@ -1266,6 +1267,15 @@ class UserAccount extends VerySimpleModel {
             Format::striptags($msg['subj']), $msg['body']);
 
         return true;
+          }
+        else
+        {
+            $con_pwd=null;
+            return new BaseError(sprintf(_S('%s: PW Reset Limit reached'),
+                $template));
+        }
+
+        
     }
 
     function __toString() {

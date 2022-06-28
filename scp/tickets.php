@@ -212,15 +212,169 @@ if($_POST && !$errors):
                     }
                 }
             }
+            ///////////////////////////////Restrict Backtrack of Ticket status change
+            ////////////////////////////////////////by comparing with desired status///////////////////////////////////
+            ///////////////////////////////////////////////////////////////////////////
+            require(INCLUDE_DIR.'ost-config.php');
+            $type=DBTYPE;$host=DBHOST;$dname=DBNAME;$user=DBUSER;$pass=DBPASS;
+            $conOst = new PDO($type.':host='.$host.';dbname='.$dname,$user,$pass);
+            $extract_status="SELECT status_id FROM ost_ticket WHERE ticket_id=".(int)$ticket->getId();
+            $extract_status = $conOst->prepare($extract_status);
+            $extract_status->execute();
+            $current_status=0;
+            if ($rss = $extract_status->fetch()) {
+                //error_log(print_r("extracted status is- ".$rss['status_id'],TRUE));
+                $current_status=(int)$rss['status_id'];
+            }
 
-            
+
+            $desired_status=$vars['reply_status_id'];
+            $ack_Status_id=6;$assign_Status_id=1;$res_Status_id=2;
+            switch($current_status)
+            {
+                case $assign_Status_id:
+                    $vars['reply_status_id']=$ack_Status_id;
+                    //error_log(print_r("Automatic Change to ACK",TRUE));
+                break;
+                case $ack_Status_id:
+                    if(($desired_status==$assign_Status_id))
+                            {
+                                $errors['err']=sprintf('%s %s',
+                    __('Unable to post the reply.'),
+                    __('Cannot change status to previous status.'));
+                                Draft::deleteForNamespace(
+                    'ticket.response.' . $ticket->getId(),
+                    $thisstaff->getId());
+                                $vars['reply_status_id']=$current_status;
+                            }
+                break;
+                case $res_Status_id:
+                    if(($desired_status!=$res_Status_id))
+                            {
+                                $errors['err']=sprintf('%s %s',
+                    __('Unable to post the reply.'),
+                    __('Cannot change status to previous status.'));
+                                Draft::deleteForNamespace(
+                    'ticket.response.' . $ticket->getId(),
+                    $thisstaff->getId());
+                                $vars['reply_status_id']=$current_status;
+                            }
+                break;
+                default:
+            }
+            //error_log(print_r($current_status,TRUE));    
+
+            /////////////////////////////////////////////////////////////
+
             if (!$errors && ($response=$ticket->postReply($vars, $errors,
                             $alert))) {
                 $msg = sprintf(__('%s: Reply posted successfully'),
                         sprintf(__('Ticket #%s'),
                             sprintf('<a href="tickets.php?id=%d"><b>%s</b></a>',
-                                $ticket->getId(), $ticket->getNumber()))
-                        );
+                                $ticket->getId(), $ticket->getNumber())));
+                
+                ///////////////////////////Code for modifying SLA based on status change/////////////////////////////////////////////////
+                
+                $conOst = new PDO($type.':host='.$host.';dbname='.$dname,$user,$pass);
+                $sla_query=null;
+                //error_log(print_r($ticket,TRUE));
+                //error_log(print_r("The reply status id -".$vars['reply_status_id'],TRUE));
+                $dept_name=null;
+                $extract_dept="SELECT department FROM ost_user__cdata WHERE user_id=".(int)$ticket->getUserId();
+                $extract_dept = $conOst->prepare($extract_dept);
+                $extract_dept->execute();
+                if($rss = $extract_dept->fetch())
+                        $dept_name=$rss['department'];
+
+                $dept_spec_sla="SELECT COUNT(*) FROM ost_sla WHERE NAME LIKE '".$dept_name."%'";
+                $dept_spec_sla = $conOst->prepare($dept_spec_sla);
+                $dept_spec_sla->execute();
+                $count_val=$dept_spec_sla->fetchColumn();
+
+                if($count_val<1)
+                {
+                switch((int)$vars['reply_status_id'])
+                    {
+                    case 6:    
+                    case 2:
+                        if(($ticket->getSLAId()!=2)||($ticket->getSLAId()!=5))
+                        {
+                            $priority_for_ticket=$ticket->getPriorityId();
+                        if($priority_for_ticket==2)
+                            { if($ticket->getSLAId()!=5)
+                                    {
+                                        $sla_query="UPDATE ost_ticket SET sla_id=5 WHERE ticket_id=:ticketid";
+                                        $ticket->setSLAId(5);
+                                    }
+                            }
+                        else 
+                            { if($ticket->getSLAId()!=2)
+                                {
+                                    $sla_query="UPDATE ost_ticket SET sla_id=2 WHERE ticket_id=:ticketid";
+                                    $ticket->setSLAId(2);
+                                }
+                            }
+                        
+                        }
+                        else
+                            $sla_query=null;
+                    break;
+                    
+                    default:
+                        $sla_query=null;
+                        
+                    }
+                }
+                else
+                {
+
+                    $comp_SLA_name=$dept_name."_";
+                    $priority_for_ticket=$ticket->getPriorityId();
+                    $end_name='';
+                    switch($priority_for_ticket)
+                    {
+                        case 1: $end_name="_Normal";
+                        break;
+                        case 2: $end_name="_Emergency";
+                        break;
+                        default:
+                    }
+
+                    switch((int)$vars['reply_status_id'])
+                    {
+                        case 6:
+                        case 2:
+                            $between="ACK_Resolve";
+                            $comp_SLA_name=$comp_SLA_name.$between.$end_name;
+                            $fetch_sla_id="SELECT id FROM ost_sla WHERE name like '".$comp_SLA_name."'";
+                            $fetch_sla_id = $conOst->prepare($fetch_sla_id);
+                            $fetch_sla_id->execute();
+                            $new_sla_id=$fetch_sla_id->fetchColumn();
+                            $sla_query="UPDATE ost_ticket SET sla_id=".$new_sla_id." WHERE ticket_id=:ticketid";
+                            $ticket->setSLAId((int)$new_sla_id);
+
+                        break;
+                        default:
+                         $sla_query=null;
+                    }
+
+                }
+
+
+                if($sla_query)
+                 {
+                    $stmtOst = $conOst->prepare($sla_query);
+                    $stmtOst->execute(array('ticketid' => (int)$ticket->getId()));
+                                     
+                    ////updating due date as per sla plan
+                    $new_due_date=($ticket->getSLADueDate($recompute=true));
+                    $ddate_query="UPDATE ost_ticket SET est_duedate=:new_due_date WHERE ticket_id=:ticketid";
+                    $ddatemkOst = $conOst->prepare($ddate_query);
+                    $ddatemkOst->execute(array('new_due_date' => $new_due_date,'ticketid' => (int)$ticket->getId()));
+                    //error_log(print_r($ticket->getSLADueDate($recompute=true),TRUE));
+                 }
+                 $conOst=null;
+                ////////////////////////////////////////////////////////////////////////////////////////////
 
                 // Clear attachment list
                 $response_form->setSource(array());

@@ -508,6 +508,35 @@ if($ticket->isOverdue())
                     ?>
                  </td>
                 </tr>
+                <tr>
+                    <th><?php echo __('Department');?>:</th>
+                    <td><?php
+                        require(INCLUDE_DIR.'ost-config.php');
+                        $type=DBTYPE;$host=DBHOST;$dname=DBNAME;$user=DBUSER;$pass=DBPASS;
+                        $conOst_temp = new PDO($type.':host='.$host.';dbname='.$dname,$user,$pass);
+                        $extract_dept="SELECT department FROM ost_user__cdata WHERE user_id=".(int)$ticket->getUserId();
+                        $extract_dept = $conOst_temp->prepare($extract_dept);
+                        $extract_dept->execute();
+                        if($rss = $extract_dept->fetch())
+                        {
+                            $pattern="^[1-9][0-9]*$^";
+                            $got_val=$rss['department'];
+                            if(preg_match($pattern,$got_val)==0)
+                            {
+                                echo $got_val;
+                            }
+                            else
+                            {
+                                $ext_full_dept="SELECT extra FROM ost_list_items WHERE id=".(int)$got_val;
+                                $ext_full_dept = $conOst_temp->prepare($ext_full_dept);
+                                $ext_full_dept->execute();
+                                $rss = $ext_full_dept->fetch();
+                                echo $rss['extra'];
+                            }
+                        }
+                        $conOst_temp=null;
+                    ?></td>
+                </tr>
             </table>
         </td>
     </tr>
@@ -585,16 +614,12 @@ if($ticket->isOverdue())
                          if ($role->hasPerm(Ticket::PERM_EDIT)) {
                              $duedate = $ticket->getField('duedate'); ?>
                            <td>
-                      <a class="inline-edit" data-placement="bottom" data-toggle="tooltip"
-                          title="<?php echo __('Update'); ?>"
+                      <a class="inline-edit" data-placement="bottom" 
                           href="#tickets/<?php echo $ticket->getId();
                            ?>/field/duedate/edit">
-                           <?php $due_date = Format::datetime($ticket->getEstDueDate()); ?>
-                           <span id="field_duedate" <?php if (!$due_date) echo 'class="faded"'; ?>>
-                               <?php echo $due_date ?: '&mdash;'.__('Empty').'&mdash;'; ?>
-                           </span>
+                           <span id="field_duedate"><?php echo Format::datetime($ticket->getEstDueDate()); ?></span>
                       </a>
-                           </td>
+                    </td>
                       <?php } else { ?>
                            <td><?php echo Format::datetime($ticket->getEstDueDate()); ?></td>
                       <?php } ?>
@@ -1042,7 +1067,7 @@ if ($errors['err'] && isset($_POST['a'])) {
                         break;
                     } ?>
                     <input type="hidden" name="draft_id" value=""/>
-                    <textarea name="response" id="response" cols="50"
+                    <textarea name="response" id="response" cols="120"
                         data-signature-field="signature" data-dept-id="<?php echo $dept->getId(); ?>"
                         data-signature="<?php
                             echo Format::htmlchars(Format::viewableImages($signature)); ?>"
@@ -1105,9 +1130,18 @@ if ($errors['err'] && isset($_POST['a'])) {
                     if ($role->hasPerm(Ticket::PERM_CLOSE) && !$outstanding)
                         $states = array_merge($states, array('closed'));
 
-                    foreach (TicketStatusList::getStatuses(
-                                array('states' => $states)) as $s) {
-                        if (!$s->isEnabled()) continue;
+                    $sorted_array=TicketStatusList::getStatuses(array('states' => $states));
+                    //ksort($sorted_array);
+                    //error_log(print_r($sorted_array,TRUE));
+
+                    foreach ( $sorted_array as $s)
+                    {
+                        if($s->getName()=="Open")
+                            continue;
+                        if($s->getName()=="Closed")
+                            continue;
+                        if (!$s->isEnabled()) 
+                            continue;
                         $selected = ($statusId == $s->getId());
                         echo sprintf('<option value="%d" %s>%s%s</option>',
                                 $s->getId(),
@@ -1443,4 +1477,26 @@ function saveDraft() {
     if (redactor.opts.draftId)
         $('#response').redactor('plugin.draft.saveDraft');
 }
+window.onload = function() {
+            var options = $('select[name="reply_status_id"] option');
+            options.detach().sort(function(a, b) {
+                var at = $(a).text();
+                var bt = $(b).text();
+                var fgh=at.search("current");
+                var jkl=bt.search("current");
+                if((fgh==-1) && (jkl==-1))
+                    return (at > bt) ? 1 : ((at < bt) ? -1 : 0);
+                else
+                {
+                    if(fgh!=-1)
+                        return 1;
+                    if(jkl!=-1)
+                        return 1;
+                    return 0;
+                }
+                
+            });
+            options.appendTo('select[name="reply_status_id"]');
+            $('select[name="reply_status_id"]').prop("selectedIndex", 0).val();
+};
 </script>
