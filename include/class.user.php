@@ -1367,9 +1367,9 @@ class UserAccount extends VerySimpleModel {
     }
 
     static function lookupByUsername($username) {
-        if (Validator::is_email($username))
+        if (strpos($username, '@') !== false)
             $user = static::lookup(array('user__emails__address' => $username));
-        elseif (Validator::is_userid($username))
+        else 
             $user = static::lookup(array('username' => $username));
 
         return $user;

@@ -94,6 +94,9 @@ if ($_POST && is_object($ticket) && $ticket->getId()) {
             if (isset($_POST['draft_id']))
                 $vars['draft_id'] = $_POST['draft_id'];
 
+             //error_log(print_r($vars,TRUE));
+            
+
             if(($msgid=$ticket->postMessage($vars, 'Web'))) {
                 $msg=__('Message Posted Successfully');
                 //Manually changing status from Resolved to Open
