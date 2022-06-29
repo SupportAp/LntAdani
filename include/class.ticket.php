@@ -88,7 +88,6 @@ implements RestrictedAccess, Threadable, Searchable {
                     'ticket_id'  => 'TicketThread.object_id',
                     "'C'" => 'TicketThread.object_type',
                 ),
-                'searchable' => false,
                 'null' => true,
             ),
             'cdata' => array(
@@ -1025,6 +1024,9 @@ implements RestrictedAccess, Threadable, Searchable {
             } else {
                 $refer->configure('desc', sprintf(__('Maintain referral access to %s'),
                         $this->getAssigned()));
+                $visibility = new VisibilityConstraint(
+                        new Q(array()), VisibilityConstraint::HIDDEN);
+                $refer->set('visibility', $visibility);
             }
         }
 
@@ -1527,6 +1529,8 @@ implements RestrictedAccess, Threadable, Searchable {
 
                 $ecb = function($t) use ($status) {
                     $t->logEvent('closed', array('status' => array($status->getId(), $status->getName())), null, 'closed');
+                    $type = array('type' => 'closed');
+                    Signal::send('object.edited', $t, $type);
                     $t->deleteDrafts();
                 };
                 break;
@@ -2041,6 +2045,7 @@ implements RestrictedAccess, Threadable, Searchable {
         $user_comments = (bool) $comments;
         $assigner = $thisstaff ?: _S('SYSTEM (Auto Assignment)');
 
+
         //Log an internal note - no alerts on the internal note.
         if ($user_comments) {
             if ($assignee instanceof Staff
@@ -2106,6 +2111,21 @@ implements RestrictedAccess, Threadable, Searchable {
                 $sentlist[] = $staff->getEmail();
             }
         }
+
+        error_log(print_r("Assignee Dept id-".$assignee->getDeptId(), TRUE));
+        error_log(print_r("Current Dept id-".$this->getDeptId(), TRUE));
+        //Change Department if the new assignee is of different Department
+        if($this->getDeptId() != $assignee->getDeptId())
+            {   
+                error_log(print_r("Inside if statement", TRUE));
+                $form = new TransferForm();        
+                $form->_dept = $assignee->getDept();
+                //error_log(print_r($this->getDept(), TRUE));
+                //error_log(print_r($assignee->getDept(), TRUE));
+                $this->getThread()->addNote(array('note' => 'Ticket transferred as assigned staff in different department.'));   
+                $this->transfer($form,$errors,false);
+            }
+
         return true;
     }
 
@@ -2671,6 +2691,7 @@ implements RestrictedAccess, Threadable, Searchable {
                 && $dept->assignMembersOnly()
                 && !$dept->isMember($staff)
             ) {
+                error_log(print_r("im inside 2",TRUE));
                 $this->staff_id = 0;
             }
         }
@@ -2906,6 +2927,18 @@ implements RestrictedAccess, Threadable, Searchable {
         if ($refer && $form->refer())
             $this->getThread()->refer($refer);
 
+        /*error_log(print_r("Performing Transfer of Department", TRUE));
+        if($assignee instanceof Staff && $this->getDeptId() !== $assignee->getDeptId())
+            {   
+                error_log(print_r("Inside if statement", TRUE));
+                $form = new TransferForm();        
+                $form->_dept = $assignee->getDeptId();
+                //error_log(print_r($this->getDept(), TRUE));
+                //error_log(print_r($assignee->getDept(), TRUE));
+                $this->getThread()->addNote(array('note' => 'Ticket transferred as assigned staff in different department.'));   
+                $this->transfer($form,$errors,false);
+            }
+        */
         return true;
     }
 
@@ -4017,22 +4050,6 @@ implements RestrictedAccess, Threadable, Searchable {
             // Init ticket filters...
             $ticket_filter = new TicketFilter($origin, $vars);
             $ticket_filter->apply($vars, $postCreate);
-
-            if ($postCreate && $filterMatches = $ticket_filter->getMatchingFilterList()) {
-                $username = __('Ticket Filter');
-                foreach ($filterMatches as $f) {
-                    $actions = $f->getActions();
-                    foreach ($actions as $key => $value) {
-                        $filterName = $f->getName();
-                        if (!$coreClass = $value->lookupByType($value->type))
-                            continue;
-
-                        if ($description = $coreClass->getEventDescription($value, $filterName))
-                            $postCreate->logEvent($description['type'], $description['desc'], $username);
-
-                    }
-                }
-            }
         }
         catch (FilterDataChanged $ex) {
             // Don't pass user recursively, assume the user has changed
@@ -4374,6 +4391,9 @@ implements RestrictedAccess, Threadable, Searchable {
             return null;
 
         /* -------------------- POST CREATE ------------------------ */
+        $vars['ticket'] = $ticket;
+        self::filterTicketData($origin, $vars,
+            array_merge(array($form), $topic_forms), $user, true);
 
         // Save the (common) dynamic form
         // Ensure we have a subject
@@ -4430,10 +4450,6 @@ implements RestrictedAccess, Threadable, Searchable {
         $vars['title'] = $vars['subject']; //Use the initial subject as title of the post.
         $vars['userId'] = $ticket->getUserId();
         $message = $ticket->postMessage($vars , $origin, false);
-
-        $vars['ticket'] = $ticket;
-        self::filterTicketData($origin, $vars,
-            array_merge(array($form), $topic_forms), $user, $ticket);
 
         // If a message was posted, flag it as the orignal message. This
         // needs to be done on new ticket, so as to otherwise separate the
