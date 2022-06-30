@@ -376,7 +376,6 @@ class CustomForm extends SimpleForm {
         foreach (parent::getFields() as $field) {
             if ($isedit && !$field->isEditable($user))
                 continue;
-
             $fields[] = $field;
         }
 
@@ -460,7 +459,8 @@ implements FormRenderer {
           $cols -= $size;
           $attrs = array('colspan' => $size, 'rowspan' => $layout->getHeight(),
               'style' => '"'.$layout->getOption('style').'"');
-          if ($offs) { ?>
+          if ($offs) { 
+            ?>
               <td colspan="<?php echo $offs; ?>"></td> <?php
           }
           ?>
@@ -944,6 +944,24 @@ class FormField {
         return array(
             'set' =>        __('has a value'),
             'nset' =>       __('does not have a value'),
+            'equal' =>      __('is'),
+            'nequal' =>     __('is not'),
+            'contains' =>   __('contains'),
+            'match' =>      __('matches'),
+        );
+    }
+
+    function getSearchMethods_custom() {
+        return array(
+            'equal' =>      __('is'),
+            'nequal' =>     __('is not'),
+            'contains' =>   __('contains'),
+            'match' =>      __('matches'),
+        );
+    }
+
+    function getSearchMethods_custom2() {
+        return array(
             'equal' =>      __('is'),
             'nequal' =>     __('is not'),
             'contains' =>   __('contains'),
@@ -2006,6 +2024,19 @@ class ChoiceField extends FormField {
         );
     }
 
+    function getSearchMethods_custom() {
+        return array(
+            'includes' =>   __('includes'),
+            '!includes' =>  __('does not include'),
+        );
+    }
+
+    function getSearchMethods_custom2() {
+        return array(
+            'includes' =>   __('includes')
+        );
+    }
+
     function getSearchMethodWidgets() {
         return array(
             'set' => null,
@@ -3037,19 +3068,16 @@ class PriorityField extends ChoiceField {
     function to_php($value, $id=false) {
         if ($value instanceof Priority)
             return $value;
-
         if (is_array($id)) {
             reset($id);
             $id = key($id);
-        } elseif (is_array($value)) {
+        }
+        elseif (is_array($value)) 
             list($value, $id) = $value;
-        } elseif ($id === false && is_numeric($value))
+        elseif ($id === false)
             $id = $value;
 
-        if (is_numeric($id))
-            return $this->getPriority($id);
-
-        return $value;
+        return $this->getPriority($id);
     }
 
     function to_database($value) {
@@ -3248,16 +3276,7 @@ class DepartmentField extends ChoiceField {
         return $choices;
     }
 
-    function display($dept, &$styles=null) {
-        if (!is_numeric($dept) && is_string($dept))
-            return Format::htmlchars($dept);
-        elseif ($dept instanceof Dept)
-            return Format::htmlchars($dept->getName());
-
-        return parent::display($dept);
-    }
-
-    function parse($id) {
+     function parse($id) {
         return $this->to_php(null, $id);
     }
 
@@ -3479,14 +3498,6 @@ class AssigneeField extends ChoiceField {
         if (is_string($value))
             $value = JsonDataParser::parse($value) ?: $value;
 
-        if (is_string($value) && strpos($value, ',')) {
-            $values = array();
-            list($key, $V) = array_map('trim', explode(',', $value));
-
-            $values[$key] = $V;
-            $value = $values;
-        }
-
         $type = '';
         if (is_array($id)) {
             reset($id);
@@ -3499,9 +3510,6 @@ class AssigneeField extends ChoiceField {
             if (!$id)
                 $id = substr(key($value), 1);
         }
-
-        if (!$type && is_numeric($value))
-            return Staff::lookup($value);
 
         switch ($type) {
         case 's':
@@ -4849,8 +4857,25 @@ class CheckboxWidget extends Widget {
         ?>
         <label class="<?php echo implode(' ', $classes); ?>">
         <input id="<?php echo $this->id; ?>"
-            type="checkbox" name="<?php echo $this->name; ?>[]" <?php
-            if ($this->value) echo 'checked="checked"'; ?> value="<?php
+            type="checkbox" name="<?php echo $this->name; ?>[]" 
+            <?php
+            //error_log(print_r($config['desc'],TRUE));
+            //Code for making Project selection mandatory
+            global $thisstaff;
+            if(!($thisstaff->getLastName()=="admin"))
+            {//Adani Manager who only see the reports
+            if(($thisstaff->getLastName()=="")||($thisstaff->getLastName()==""))
+                {
+                if($this->value) echo 'checked="checked"';
+                }
+            else
+                {
+                if($config['desc']=="User / Department Name")
+                    echo 'checked="checked" onclick="return false"';
+                else if ($this->value) echo 'checked="checked"'; 
+                }
+            }
+            ?> value="<?php
             echo $this->field->get('id'); ?>"/>
         <?php
         if ($config['desc']) {
